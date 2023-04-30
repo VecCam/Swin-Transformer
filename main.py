@@ -28,7 +28,16 @@ from optimizer import build_optimizer
 from logger import create_logger
 from utils import load_checkpoint, load_pretrained, save_checkpoint, NativeScalerWithGradNormCount, auto_resume_helper, \
     reduce_tensor
+from sklearn.metrics import confusion_matrix
+import matplotlib.pyplot as plt
+import seaborn as sn
 
+species_all = ["AF",
+            "AG",
+            "AS",
+            "AO"
+            "C",
+            "O"]
 
 def parse_option():
     parser = argparse.ArgumentParser('Swin Transformer training and evaluation script', add_help=False)
@@ -270,6 +279,50 @@ def validate(config, data_loader, model):
                 f'Acc@5 {acc5_meter.val:.3f} ({acc5_meter.avg:.3f})\t'
                 f'Mem {memory_used:.0f}MB')
     logger.info(f' * Acc@1 {acc1_meter.avg:.3f} Acc@5 {acc5_meter.avg:.3f}')
+
+    # Write code to obtain confusion matrix of the model
+    predicted = []
+    actual = []
+    for idx, (images, target) in enumerate(data_loader):
+        images = images.cuda(non_blocking=True)
+        target = target.cuda(non_blocking=True)
+        with torch.cuda.amp.autocast(enabled=config.AMP_ENABLE):
+            output = model(images)
+        predicted.extend(torch.argmax(output, dim=1).tolist())
+        actual.extend(target.tolist())
+    cm = confusion_matrix(actual, predicted)
+    print(cm)
+
+    fig = plt.figure(figsize=(8, 8))
+    ax = plt.subplot()
+    hm = sn.heatmap(cm, annot=True, ax=ax, cmap="PuBu",fmt = "d")
+    ax.set_yticklabels(hm.get_yticklabels(), rotation=90)
+    ax.set_xlabel('Predicted labels', fontsize=12)
+    ax.set_ylabel('True labels', fontsize=12)
+    ax.xaxis.set_ticklabels(species_all)
+    ax.yaxis.set_ticklabels(species_all)
+    plt.xticks(rotation=90)
+    plt.yticks(rotation=0)
+
+    #save the confusion matrix with a unique name that does not change across runs
+    plt.savefig('plots/confusion_matrix_{}.png'.format(datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")))
+
+    # plot confusion matrix of percentages
+    cm = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
+    fig = plt.figure(figsize=(8, 8))
+    ax = plt.subplot()
+    hm = sn.heatmap(cm, annot=True, ax=ax, cmap="PuBu")
+    ax.set_yticklabels(hm.get_yticklabels(), rotation=90)
+    ax.set_xlabel('Predicted labels', fontsize=12)
+    ax.set_ylabel('True labels', fontsize=12)
+    ax.xaxis.set_ticklabels(species_all)
+    ax.yaxis.set_ticklabels(species_all)
+    plt.xticks(rotation=90)
+    plt.yticks(rotation=0)
+
+    #save the confusion matrix with a unique name that does not change across runs
+    plt.savefig('plots/confusion_matrix_percentages_{}.png'.format(datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")))
+	
     return acc1_meter.avg, acc5_meter.avg, loss_meter.avg
 
 
